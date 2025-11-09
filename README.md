@@ -1,6 +1,7 @@
 # lidl
 Linux Dynamic Linker for x86_64 (now is a parser thats read ELF header), in the future will be mpre
 Created for education and fun
+
 It is:
 400% more faster than glibc parsing files
 100% x86_64
