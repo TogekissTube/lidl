@@ -1,117 +1,117 @@
-# Makefile - Parte 2: ELF Header Parser (.so library)
-
 CC = gcc
 NASM = nasm
-CFLAGS = -Wall -Wextra -O0 -fPIC -m64 -std=c99 -g 
+CFLAGS = -Wall -Wextra -O2 -fPIC -m64 -std=c99 -g
 NASM_FLAGS = -f elf64 -g -F dwarf
-LDFLAGS = -shared -m64 
+LDFLAGS = -m64
 
 # Source files
-C_SOURCES = elf_parser.c elf_header.c
-ASM_SOURCES = elf.asm header.asm
-OBJECTS = $(C_SOURCES:.c=.o) $(ASM_SOURCES:.asm=.o)
+C_SOURCES = src/elf_parser.c src/elf_header.c src/phdr.c
+ASM_SOURCES = asm/elf.asm asm/header.asm asm/phdr.asm
+TEST_SOURCE = tests/test.c
 
-# Output library
-SONAME = ld-x86_64.so
-VERSION = 0.1
-SO_FULL = $(SONAME).$(VERSION)
-SO_LINK = $(SONAME).0
+# Object files
+C_OBJECTS = $(C_SOURCES:.c=.o)
+ASM_OBJECTS = $(ASM_SOURCES:.asm=.o)
+TEST_OBJECT = tests/test.o
+OBJECTS = $(C_OBJECTS) $(ASM_OBJECTS)
 
-# Test executable
+# Output
 TEST_EXEC = test
-TEST_SOURCE = test.c
-TEST_CFLAGS = -Wall -Wextra -O2 -m64 -std=c99  -g
 
 # ============================================================================
-# Main targets
+# Default target
 # ============================================================================
 
-all: $(SO_FULL) $(SO_LINK) $(TEST_EXEC)
+all: $(TEST_EXEC)
 
-# Build shared library
-$(SO_FULL): $(OBJECTS)
-	@echo "[LD] Linking shared library..."
-	$(CC) $(LDFLAGS) -Wl,-soname,$(SO_LINK) -o $@ $^
+# ============================================================================
+# Build test executable
+# ============================================================================
+
+$(TEST_EXEC): $(OBJECTS) $(TEST_OBJECT)
+	@echo "[LD] Linking $@..."
+	$(CC) $(LDFLAGS) -o $@ $^
 	@echo "[+] Created: $@"
 
-$(SO_LINK): $(SO_FULL)
-	ln -sf $(SO_FULL) $(SO_LINK)
-	@echo "[+] Created symlink: $@"
+# ============================================================================
+# C compilation rules
+# ============================================================================
 
-$(SONAME): $(SO_LINK)
-	ln -sf $(SO_LINK) $(SONAME)
-	@echo "[+] Created symlink: $@"
-
-# Build test executable (static link)
-$(TEST_EXEC): $(TEST_SOURCE) $(C_SOURCES:.c=.o) $(ASM_SOURCES:.asm=.o)
-	@echo "[CC] Building test executable..."
-	$(CC) $(TEST_CFLAGS) -o $@ $^
-	@echo "[+] Created: $@"
-
-# C object files
-%.o: %.c
+src/%.o: src/%.c
 	@echo "[CC] Compiling $<..."
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-# ASM object files
-%.o: %.asm
+tests/%.o: tests/%.c
+	@echo "[CC] Compiling $<..."
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+# ============================================================================
+# ASM compilation rules
+# ============================================================================
+
+asm/%.o: asm/%.asm
 	@echo "[NASM] Assembling $<..."
 	$(NASM) $(NASM_FLAGS) -o $@ $<
 
 # ============================================================================
-# Utility targets
+# Testing targets
 # ============================================================================
 
-test_t: $(TEST_EXEC)
+test_test: $(TEST_EXEC)
 	@echo "[+] Running test..."
-	LD_LIBRARY_PATH=. ./$(TEST_EXEC) /usr/bin/ls
+	./$(TEST_EXEC) /bin/ls
 	@echo "[+] Test completed"
 
-test_other: $(TEST_EXEC)
-	@echo "[+] Running test on other binaries..."
-	LD_LIBRARY_PATH=. ./$(TEST_EXEC) /bin/bash
-	LD_LIBRARY_PATH=. ./$(TEST_EXEC) /usr/bin/gcc
+test_valgrind: $(TEST_EXEC)
+	@echo "[+] Running with Valgrind..."
+	valgrind --leak-check=full --show-leak-kinds=all ./$(TEST_EXEC) /bin/ls
 
-install: $(SO_FULL) $(SO_LINK)
-	@echo "[*] Installing..."
-	sudo cp $(SO_FULL) /usr/local/lib/
-	sudo cp $(SO_LINK) /usr/local/lib/
-	sudo cp elf_parser.h elf_header.h /usr/local/include/
-	sudo ldconfig
-	@echo "[+] Installed to /usr/local/lib/"
+test_multiple: $(TEST_EXEC)
+	@echo "[+] Testing multiple binaries..."
+	./$(TEST_EXEC) /bin/ls
+	./$(TEST_EXEC) /bin/cat
+	./$(TEST_EXEC) /usr/bin/python3 2>/dev/null || echo "Python3 not found"
 
-uninstall:
-	@echo "[*] Uninstalling..."
-	sudo rm -f /usr/local/lib/$(SO_FULL) /usr/local/lib/$(SO_LINK) /usr/local/lib/$(SONAME)
-	sudo rm -f /usr/local/include/elf_parser.h /usr/local/include/elf_header.h
-	sudo ldconfig
-	@echo "[+] Uninstalled"
+# ============================================================================
+# Cleaning targets
+# ============================================================================
 
 clean:
-	@echo "[*] Cleaning..."
-	rm -f $(OBJECTS) $(SO_FULL) $(SO_LINK) $(SONAME) $(TEST_EXEC)
-	rm test
+	@echo "[*] Cleaning object files..."
+	rm -f $(C_OBJECTS) $(ASM_OBJECTS) $(TEST_OBJECT)
 	@echo "[+] Cleaned"
 
 clean_all: clean
 	@echo "[*] Full clean..."
-	rm -f *.o *.so* *.a
+	rm -f $(TEST_EXEC)
 	@echo "[+] Full clean done"
 
-debug: CFLAGS += -g -DDEBUG
-debug: TEST_CFLAGS += -g -DDEBUG
-debug: clean all
-	@echo "[+] Debug build complete"
+distclean: clean_all
+	@echo "[*] Distribution clean..."
+	rm -f *.o *.so *.a
+	@echo "[+] Distribution clean done"
 
-release: CFLAGS += -DNDEBUG -O3
-release: clean all
-	@echo "[+] Release build complete"
+# ============================================================================
+# Info targets
+# ============================================================================
 
 info:
-	@echo "=== ELF Parser - Part 2 Build Info ==="
-	@echo "Library: $(SO_FULL) (v$(VERSION))"
-	@echo "Test: $(TEST_EXEC)"
-	@echo "Targets: test, install, uninstall, clean"
-	@echo "========================================"
+	@echo "=== x86-64 Dynamic Linker - Build Info ==="
+	@echo "Test executable: $(TEST_EXEC)"
+	@echo "C sources: $(C_SOURCES)"
+	@echo "ASM sources: $(ASM_SOURCES)"
+	@echo ""
+	@echo "Targets:"
+	@echo "  make              - Build test executable"
+	@echo "  make test_test         - Run basic test"
+	@echo "  make test_valgrind - Run with memory checking"
+	@echo "  make test_multiple - Test multiple binaries"
+	@echo "  make clean        - Clean object files"
+	@echo "  make clean_all    - Clean everything"
+	@echo "  make info         - Show this help"
 
-.PHONY: all test test_other install uninstall clean clean_all debug release info
+# ============================================================================
+# Phony targets
+# ============================================================================
+
+.PHONY: all test_test test_valgrind test_multiple clean clean_all distclean info
